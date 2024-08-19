@@ -1,0 +1,99 @@
+import os
+import argparse
+import logging
+
+# ANSI escape code for blue color
+BLUE = "\033[94m"
+RESET = "\033[0m"
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+
+# Banner with blue color
+banner = f"""
+{BLUE}██╗      ██████╗  ██████╗ ███████╗ ██████╗ █████╗ ███╗   ██╗
+██║     ██╔═══██╗██╔════╝ ██╔════╝██╔════╝██╔══██╗████╗  ██║
+██║     ██║   ██║██║  ███╗███████╗██║     ███████║██╔██╗ ██║
+██║     ██║   ██║██║   ██║╚════██║██║     ██╔══██║██║╚██╗██║
+███████╗╚██████╔╝╚██████╔╝███████║╚██████╗██║  ██║██║ ╚████║
+╚══════╝ ╚═════╝  ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝{RESET}
+"""
+
+def parse_log_file(log_file_path, suspicious_keywords, failed_login_patterns, importance_threshold=3, keyword_weights=None):
+    """
+    Parses a log file and extracts lines containing suspicious keywords and patterns,
+    filtering based on an importance threshold and optional keyword weights.
+
+    Args:
+        log_file_path (str): The path to the log file.
+        suspicious_keywords (list): A list of keywords to search for.
+        failed_login_patterns (list): A list of patterns to search for failed login attempts.
+        importance_threshold (int, optional): Minimum total weight of keyword matches
+                                              required to consider a line important.
+                                              Defaults to 3.
+        keyword_weights (dict, optional): A dictionary mapping keywords to their weights.
+                                          If not provided, all keywords have a weight of 1.
+
+    Returns:
+        list: A list of tuples, each containing the line number and the matching line.
+    """
+    suspicious_lines = []
+    if keyword_weights is None:
+        keyword_weights = {keyword: 1 for keyword in suspicious_keywords}
+
+    if not os.path.exists(log_file_path):
+        logging.warning(f"Log file not found at {log_file_path}")
+        return suspicious_lines
+
+    try:
+        with open(log_file_path, 'r') as log_file:
+            for line_num, line in enumerate(log_file, 1):
+                total_weight = 0
+                for keyword in suspicious_keywords:
+                    if re.search(keyword, line, re.IGNORECASE):
+                        total_weight += keyword_weights.get(keyword, 1)
+                if total_weight >= importance_threshold:
+                    suspicious_lines.append((line_num, line.strip()))
+
+                for pattern in failed_login_patterns:
+                    if re.search(pattern, line, re.IGNORECASE):
+                        suspicious_lines.append((line_num, line.strip()))
+                        break
+
+    except PermissionError:
+        logging.error(f"Permission denied to access {log_file_path}")
+    except Exception as e:
+        logging.error(f"Error processing {log_file_path}: {e}")
+
+    return suspicious_lines
+
+def main():
+    print(banner)
+
+    parser = argparse.ArgumentParser(description="Parse log files for suspicious activity.")
+    parser.add_argument('log_files', nargs='+', help='Paths to the log files to analyze.')
+    parser.add_argument('--keywords', nargs='+', default=["error", "fail", "unauthorized", "attack", "malware"], help='Keywords to search for.')
+    parser.add_argument('--patterns', nargs='+', default=[r"Failed password for", r"Invalid user", r"Authentication failure"], help='Patterns for failed login attempts.')
+    parser.add_argument('--importance', type=int, default=3, help='Importance threshold for keyword matches.')
+    parser.add_argument('--weights', nargs='*', default=["attack=3", "malware=3"], help='Keyword weights in the form keyword=weight.')
+
+    args = parser.parse_args()
+
+    keyword_weights = {kw.split('=')[0]: int(kw.split('=')[1]) for kw in args.weights}
+    
+    any_suspicious_activity = False
+
+    for log_file_path in args.log_files:
+        suspicious_lines = parse_log_file(log_file_path, args.keywords, args.patterns, args.importance, keyword_weights)
+        if suspicious_lines:
+            any_suspicious_activity = True
+            logging.info(f"\nSuspicious activity found in {log_file_path}:")
+            for line_num, line in suspicious_lines:
+                logging.info(f"Line {line_num}: {line}")
+
+    if not any_suspicious_activity:
+        logging.info("\nEverything looks good! No suspicious activity detected.")
+
+if __name__ == "__main__":
+    main()
+```
